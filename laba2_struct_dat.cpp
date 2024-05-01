@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <complex>
 #include"\include\cblas.h"
 //#include"mkl.h"
@@ -21,7 +21,7 @@ void matrix_multiply(float** A, float** B, float** result, int N) {
         for (int j = 0; j < N; ++j) {
             result[i][j] = 0.0f;
             for (int k = 0; k < N; ++k) {
-                result[i][j] += A[i][k] * B[k][j];  // Исправлена индексация B на B[k][j]
+                result[i][j] += A[i][k] * B[k][j]; 
             }
         }
     }
@@ -39,6 +39,22 @@ bool compare_matrices(float** A, float** B, int rows, int cols, float epsilon = 
     return true;
 }
 
+void optimized_matrix_multiply(float** A, float** B, float** C, int N, int block_size = 64) {
+#pragma omp parallel for
+    for (int i = 0; i < N; i += block_size) {
+        for (int j = 0; j < N; j += block_size) {
+            for (int k = 0; k < N; k += block_size) {
+                for (int ii = i; ii < min(i + block_size, N); ++ii) {
+                    for (int jj = j; jj < min(j + block_size, N); ++jj) {
+                        for (int kk = k; kk < min(k + block_size, N); ++kk) {
+                            C[ii][jj] += A[ii][kk] * B[kk][jj];
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 
 int main()
@@ -55,13 +71,15 @@ int main()
     float** c2 = new_matrix(N);
 
 
+    cout << "Перебейнос Константин Евгеньевич \t" << "090301-ПОВа-023" << endl<<endl;
+
 
     // Заполнение матриц случайными значениями от 0 до 1
 
     for (int i = 0; i < N; ++i)
         for (int j = 0; j < N; ++j) {
-            a[i][j] = static_cast<float>(rand()) / RAND_MAX;
-            b[i][j] = static_cast<float>(rand()) / RAND_MAX;
+            a[i][j] = static_cast<float>(rand()) / RAND_MAX * 5.0f;
+            b[i][j] = static_cast<float>(rand()) / RAND_MAX * 5.0f;
         }
 
 
@@ -77,7 +95,7 @@ int main()
 
     clock_t start = clock();
 
-    //cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, N, N, N, alpha, a[0], N, b[0], N, beta, c1[0], N);
+    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, N, N, N, alpha, a[0], N, b[0], N, beta, c1[0], N);
 
     clock_t end = clock();
 
@@ -107,6 +125,20 @@ int main()
 
     cout << "c2[10][20] = " << c2[10][20] << "\n";
 
+
+    start = clock();
+
+    optimized_matrix_multiply(a, b, c2, N);
+
+    end = clock();
+
+    elapsed_secs = double(end - start) / CLOCKS_PER_SEC;
+
+    cout << "Время выполнения умножения матриц: " << elapsed_secs << " секунд.\n";
+
+    cout << "Достигнутая производительность " << 2.0 * (double)N * (double)N * N / elapsed_secs * 1.0e-6 << " MFlops.\n";
+
+    cout << "c2[10][20] = " << c2[10][20] << "\n";
 
 
     if (compare_matrices(c1, c2, N, N))
