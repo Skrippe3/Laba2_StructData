@@ -1,7 +1,9 @@
-﻿#include <iostream>
+#include <iostream>
 #include <complex>
 #include"\include\cblas.h"
 //#include"mkl.h"
+
+const int N = 2048;
 
 using namespace std;
 
@@ -15,13 +17,14 @@ float** new_matrix(const int N) {
     return a;
 }
 
+
 void matrix_multiply(float** A, float** B, float** result, int N) {
 #pragma omp parallel for num_threads(128)
     for (int i = 0; i < N; ++i) {
         for (int j = 0; j < N; ++j) {
             result[i][j] = 0.0f;
             for (int k = 0; k < N; ++k) {
-                result[i][j] += A[i][k] * B[k][j]; 
+                result[i][j] += A[i][k] * B[k][j];
             }
         }
     }
@@ -39,31 +42,50 @@ bool compare_matrices(float** A, float** B, int rows, int cols, float epsilon = 
     return true;
 }
 
-void optimized_matrix_multiply(float** A, float** B, float** C, int N, int block_size = 64) {
-#pragma omp parallel for
-    for (int i = 0; i < N; i += block_size) {
-        for (int j = 0; j < N; j += block_size) {
-            for (int k = 0; k < N; k += block_size) {
-                for (int ii = i; ii < min(i + block_size, N); ++ii) {
-                    for (int jj = j; jj < min(j + block_size, N); ++jj) {
-                        for (int kk = k; kk < min(k + block_size, N); ++kk) {
-                            C[ii][jj] += A[ii][kk] * B[kk][jj];
+void transposeMatrix(float** matrix, float** transposedMatrix, int N) {
+#pragma omp parallel for collapse(2) num_threads(128)
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            transposedMatrix[j][i] = matrix[i][j];
+        }
+    }
+}
+
+void matrixOptimizedMultiplication(float** matrixA, float** matrixB, float** matrixC, int N, int blockSize) {
+    float** transposedB = new_matrix(N);
+    transposeMatrix(matrixB, transposedB, N);
+
+#pragma omp parallel for collapse(2) num_threads(128)
+    for (int iBlock = 0; iBlock < N; iBlock += blockSize) {
+        for (int jBlock = 0; jBlock < N; jBlock += blockSize) {
+            for (int kBlock = 0; kBlock < N; kBlock += blockSize) {
+                for (int i = 0; i < blockSize; ++i) {
+                    int iOffset = iBlock + i;
+                    for (int j = 0; j < blockSize; ++j) {
+                        int jOffset = jBlock + j;
+                        float sum = 0.0;
+                        for (int k = 0; k < blockSize; ++k) {
+                            sum += matrixA[iOffset][kBlock + k] * transposedB[jOffset][kBlock + k];
                         }
+                        matrixC[iOffset][jOffset] += sum;
                     }
                 }
             }
         }
     }
+
+    delete[] transposedB[0];
+    delete[] transposedB;
 }
 
 
-int main()
 
+int main()
 {
 
     setlocale(LC_ALL, "Russian");
 
-    const int N = 2048;
+
 
     float** a = new_matrix(N);
     float** b = new_matrix(N);
@@ -71,7 +93,7 @@ int main()
     float** c2 = new_matrix(N);
 
 
-    cout << "Перебейнос Константин Евгеньевич \t" << "090301-ПОВа-023" << endl<<endl;
+    cout << "Перебейнос Константин Евгеньевич \t" << "090301-ПОВа-023" << endl << endl;
 
 
     // Заполнение матриц случайными значениями от 0 до 1
@@ -125,10 +147,16 @@ int main()
 
     cout << "c2[10][20] = " << c2[10][20] << "\n";
 
+    // Reset c2 before the optimized multiplication
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            c2[i][j] = 0.0f;
+        }
+    }
 
     start = clock();
 
-    optimized_matrix_multiply(a, b, c2, N);
+    matrixOptimizedMultiplication(a, b, c2, N, 128);
 
     end = clock();
 
